@@ -1,0 +1,88 @@
+"""End-to-end tests for styled 5-sheet Excel export and CLI commands."""
+
+import json
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+from lxml import etree
+
+from ubl_audit.cli import main
+
+
+NS_SS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+class ExporterAndCliTests(unittest.TestCase):
+    """Verify Excel workbook structure, formulas, and CLI exit behavior."""
+
+    def test_cli_demo_creates_valid_five_sheet_workbook(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_str:
+            demo_dir = Path(tmp_str) / "demo_run"
+            rc = main(["demo", "--out-dir", str(demo_dir)])
+            self.assertEqual(rc, 0)
+
+            xlsx_path = demo_dir / "ornek_denetim_raporu.xlsx"
+            self.assertTrue(xlsx_path.is_file())
+
+            with zipfile.ZipFile(xlsx_path, "r") as zf:
+                wb_xml = etree.fromstring(zf.read("xl/workbook.xml"))
+                sheets = [el.get("name") for el in wb_xml.findall(f".//{{{NS_SS}}}sheet")]
+                self.assertEqual(
+                    sheets,
+                    [
+                        "Ozet_Denetim",
+                        "Faturalar",
+                        "Kalem_Detay",
+                        "KDV_Kirilim",
+                        "Uyari_ve_Mukerrer",
+                    ],
+                )
+
+                summary_xml = etree.fromstring(zf.read("xl/worksheets/sheet1.xml"))
+                formulas = [el.text for el in summary_xml.findall(f".//{{{NS_SS}}}f") if el.text]
+                self.assertTrue(any(f.startswith("COUNTIF(Faturalar!") for f in formulas))
+                self.assertTrue(any(f.startswith("SUM(Faturalar!") for f in formulas))
+
+                inv_xml = etree.fromstring(zf.read("xl/worksheets/sheet2.xml"))
+                inv_rows = inv_xml.findall(f".//{{{NS_SS}}}sheetData/{{{NS_SS}}}row")
+                self.assertEqual(len(inv_rows), 7)
+
+                shared_xml = etree.fromstring(zf.read("xl/sharedStrings.xml"))
+                shared_texts = ["".join(si.itertext()) for si in shared_xml.findall(f".//{{{NS_SS}}}si")]
+                self.assertIn("GECTI", shared_texts)
+                self.assertIn("UYARI", shared_texts)
+                self.assertIn("HATA", shared_texts)
+
+                findings_xml = etree.fromstring(zf.read("xl/worksheets/sheet5.xml"))
+                findings_rows = findings_xml.findall(f".//{{{NS_SS}}}sheetData/{{{NS_SS}}}row")
+                self.assertGreaterEqual(len(findings_rows), 4)
+
+    def test_cli_audit_with_json_and_fail_on_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp_dir = Path(tmp_str)
+            demo_dir = tmp_dir / "src_demo"
+            self.assertEqual(main(["demo", "--out-dir", str(demo_dir)]), 0)
+
+            sample_dir = demo_dir / "ornek_faturalar"
+            out_xlsx = tmp_dir / "cikti.xlsx"
+            out_json = tmp_dir / "ozet.json"
+
+            rc_fail = main(
+                [
+                    "audit",
+                    str(sample_dir),
+                    "-o",
+                    str(out_xlsx),
+                    "--json",
+                    str(out_json),
+                    "--fail-on-error",
+                ]
+            )
+            self.assertEqual(rc_fail, 2)
+            self.assertTrue(out_xlsx.is_file())
+            payload = json.loads(out_json.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["parsed_invoices"], 6)
+            self.assertEqual(payload["summary"]["passed"], 1)
+            self.assertGreaterEqual(payload["summary"]["errors"], 1)

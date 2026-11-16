@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ubl-invoice-audit"
+version = "0.1.0"
+description = "Cevrimdisi UBL-TR e-Fatura / e-Arsiv XML ve ZIP ayristirici, KDV/matrah/tevkifat/mukerrer denetcisi ve Excel raporlayici."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Rovtal", email = "126407136+Rovtal@users.noreply.github.com" }
+]
+dependencies = [
+  "lxml>=5.0",
+  "XlsxWriter>=3.1"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0"
+]
+
+[project.scripts]
+ubl-audit = "ubl_audit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
