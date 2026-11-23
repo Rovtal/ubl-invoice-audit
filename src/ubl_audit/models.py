@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, List
 
+from .i18n import STATUS_LABELS, t, validate_lang
+
 
 ZERO = Decimal("0.00")
 
@@ -89,11 +91,12 @@ class InvoiceAuditStatus:
     invoice: InvoiceRecord
     status: str
     findings: List[AuditFinding] = field(default_factory=list)
+    lang: str = "tr"
 
     @property
     def note_summary(self) -> str:
         if not self.findings:
-            return "Tüm matematiksel ve tekillik kontrolleri geçti."
+            return t(self.lang, "status_all_passed")
         return " | ".join(f"[{item.severity}] {item.message}" for item in self.findings)
 
 
@@ -105,6 +108,7 @@ class AuditReport:
     findings: List[AuditFinding]
     parse_errors: List[Dict[str, str]]
     tolerance: Decimal
+    lang: str = "tr"
 
     @property
     def total_files(self) -> int:
@@ -112,12 +116,15 @@ class AuditReport:
 
     @property
     def passed_count(self) -> int:
-        return sum(1 for item in self.results if item.status == "GECTI")
+        pass_label = STATUS_LABELS[validate_lang(self.lang)]["pass"]
+        return sum(1 for item in self.results if item.status == pass_label)
 
     @property
     def warning_count(self) -> int:
-        return sum(1 for item in self.results if item.status == "UYARI")
+        warn_label = STATUS_LABELS[validate_lang(self.lang)]["warn"]
+        return sum(1 for item in self.results if item.status == warn_label)
 
     @property
     def error_count(self) -> int:
-        return sum(1 for item in self.results if item.status == "HATA") + len(self.parse_errors)
+        err_label = STATUS_LABELS[validate_lang(self.lang)]["error"]
+        return sum(1 for item in self.results if item.status == err_label) + len(self.parse_errors)

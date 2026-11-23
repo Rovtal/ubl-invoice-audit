@@ -11,6 +11,7 @@ from xml.etree import ElementTree as StdET
 
 from lxml import etree
 
+from .i18n import TAX_KIND_LABELS, t, validate_lang
 from .models import ZERO, InvoiceLineItem, InvoiceRecord, TaxBreakdown
 
 logger = logging.getLogger("ubl_audit.parser")
@@ -60,23 +61,28 @@ def _text_at(parent: Optional[etree._Element], *parts: str) -> str:
     return node.text.strip()
 
 
-def _to_decimal(raw: str, field_label: str, warnings: List[str]) -> Decimal:
+def _to_decimal(raw: str, field_label: str, warnings: List[str], lang: str = "tr") -> Decimal:
     cleaned = raw.strip()
     if not cleaned:
         return ZERO
     try:
         return Decimal(cleaned)
     except InvalidOperation:
-        warnings.append(f"Geçersiz sayısal değer ({field_label}): {cleaned}")
+        warnings.append(t(lang, "parser_bad_decimal", field_label=field_label, cleaned=cleaned))
         return ZERO
 
 
-def _sum_allowance_charges(container: Optional[etree._Element], warnings: List[str], prefix: str) -> Tuple[Decimal, Decimal]:
+def _sum_allowance_charges(
+    container: Optional[etree._Element],
+    warnings: List[str],
+    prefix: str,
+    lang: str = "tr",
+) -> Tuple[Decimal, Decimal]:
     allowance = ZERO
     charge = ZERO
     for block in _find_children(container, "AllowanceCharge"):
         indicator = _text_at(block, "ChargeIndicator").lower()
-        amount = _to_decimal(_text_at(block, "Amount"), f"{prefix}.AllowanceCharge", warnings)
+        amount = _to_decimal(_text_at(block, "Amount"), f"{prefix}.AllowanceCharge", warnings, lang=lang)
         if indicator == "true":
             charge += amount
         else:
@@ -125,15 +131,16 @@ def _extract_tax_totals(
     tag_name: str,
     kind: str,
     warnings: List[str],
+    lang: str = "tr",
 ) -> Tuple[Decimal, List[TaxBreakdown]]:
     total = ZERO
     breakdowns: List[TaxBreakdown] = []
     for tax_block in _find_children(container, tag_name):
-        total += _to_decimal(_text_at(tax_block, "TaxAmount"), f"{tag_name}.TaxAmount", warnings)
+        total += _to_decimal(_text_at(tax_block, "TaxAmount"), f"{tag_name}.TaxAmount", warnings, lang=lang)
         for sub in _find_children(tax_block, "TaxSubtotal"):
-            taxable = _to_decimal(_text_at(sub, "TaxableAmount"), f"{tag_name}.TaxableAmount", warnings)
-            tax_amt = _to_decimal(_text_at(sub, "TaxAmount"), f"{tag_name}.SubtotalTaxAmount", warnings)
-            pct = _to_decimal(_text_at(sub, "Percent"), f"{tag_name}.Percent", warnings)
+            taxable = _to_decimal(_text_at(sub, "TaxableAmount"), f"{tag_name}.TaxableAmount", warnings, lang=lang)
+            tax_amt = _to_decimal(_text_at(sub, "TaxAmount"), f"{tag_name}.SubtotalTaxAmount", warnings, lang=lang)
+            pct = _to_decimal(_text_at(sub, "Percent"), f"{tag_name}.Percent", warnings, lang=lang)
             scheme_el = _find_path(sub, "TaxCategory", "TaxScheme")
             type_code = _text_at(scheme_el, "TaxTypeCode") or _text_at(scheme_el, "ID")
             tax_name = _text_at(scheme_el, "Name") or kind
@@ -150,10 +157,15 @@ def _extract_tax_totals(
     return total, breakdowns
 
 
-def parse_ubl_xml_bytes(raw_bytes: bytes, source_name: str = "<memory>") -> Optional[InvoiceRecord]:
+def parse_ubl_xml_bytes(
+    raw_bytes: bytes,
+    source_name: str = "<memory>",
+    lang: str = "tr",
+) -> Optional[InvoiceRecord]:
     """Parse UBL-TR Invoice XML bytes securely without resolving external entities."""
+    active_lang = validate_lang(lang)
     if not raw_bytes or not raw_bytes.strip():
-        raise ValueError("Boş XML içeriği.")
+        raise ValueError(t(active_lang, "parser_empty_xml"))
 
     cleaned_bytes = raw_bytes.lstrip(b"\xef\xbb\xbf \t\r\n")
     parser = etree.XMLParser(
@@ -166,38 +178,45 @@ def parse_ubl_xml_bytes(raw_bytes: bytes, source_name: str = "<memory>") -> Opti
     try:
         root = etree.fromstring(cleaned_bytes, parser=parser)
     except etree.XMLSyntaxError as exc:
-        raise ValueError(f"XML sözdizimi hatası: {exc}") from exc
+        raise ValueError(t(active_lang, "parser_xml_syntax", exc=exc)) from exc
 
     if _local_name(root) != "Invoice":
         return None
 
     warnings: List[str] = []
+    kinds = TAX_KIND_LABELS[active_lang]
     supplier_vkn, supplier_scheme, supplier_name = _extract_party(_find_child(root, "AccountingSupplierParty"))
     customer_vkn, customer_scheme, customer_name = _extract_party(_find_child(root, "AccountingCustomerParty"))
 
     monetary = _find_child(root, "LegalMonetaryTotal")
-    header_allowance, header_charge = _sum_allowance_charges(root, warnings, "Header")
+    header_allowance, header_charge = _sum_allowance_charges(root, warnings, "Header", lang=active_lang)
 
-    line_ext = _to_decimal(_text_at(monetary, "LineExtensionAmount"), "LineExtensionAmount", warnings)
+    line_ext = _to_decimal(_text_at(monetary, "LineExtensionAmount"), "LineExtensionAmount", warnings, lang=active_lang)
     allowance_total = _text_at(monetary, "AllowanceTotalAmount")
     charge_total = _text_at(monetary, "ChargeTotalAmount")
     allowance_val = (
-        _to_decimal(allowance_total, "AllowanceTotalAmount", warnings)
+        _to_decimal(allowance_total, "AllowanceTotalAmount", warnings, lang=active_lang)
         if allowance_total
         else header_allowance
     )
     charge_val = (
-        _to_decimal(charge_total, "ChargeTotalAmount", warnings)
+        _to_decimal(charge_total, "ChargeTotalAmount", warnings, lang=active_lang)
         if charge_total
         else header_charge
     )
-    tax_excl = _to_decimal(_text_at(monetary, "TaxExclusiveAmount"), "TaxExclusiveAmount", warnings)
-    tax_incl = _to_decimal(_text_at(monetary, "TaxInclusiveAmount"), "TaxInclusiveAmount", warnings)
-    rounding_amt = _to_decimal(_text_at(monetary, "PayableRoundingAmount"), "PayableRoundingAmount", warnings)
-    payable_amt = _to_decimal(_text_at(monetary, "PayableAmount"), "PayableAmount", warnings)
+    tax_excl = _to_decimal(_text_at(monetary, "TaxExclusiveAmount"), "TaxExclusiveAmount", warnings, lang=active_lang)
+    tax_incl = _to_decimal(_text_at(monetary, "TaxInclusiveAmount"), "TaxInclusiveAmount", warnings, lang=active_lang)
+    rounding_amt = _to_decimal(_text_at(monetary, "PayableRoundingAmount"), "PayableRoundingAmount", warnings, lang=active_lang)
+    payable_amt = _to_decimal(_text_at(monetary, "PayableAmount"), "PayableAmount", warnings, lang=active_lang)
 
-    tax_total_amt, taxes = _extract_tax_totals(root, "TaxTotal", "VERGI", warnings)
-    withholding_total_amt, withholdings = _extract_tax_totals(root, "WithholdingTaxTotal", "TEVKIFAT", warnings)
+    tax_total_amt, taxes = _extract_tax_totals(root, "TaxTotal", kinds["tax"], warnings, lang=active_lang)
+    withholding_total_amt, withholdings = _extract_tax_totals(
+        root,
+        "WithholdingTaxTotal",
+        kinds["withholding"],
+        warnings,
+        lang=active_lang,
+    )
 
     lines: List[InvoiceLineItem] = []
     for line_el in _find_children(root, "InvoiceLine"):
@@ -206,11 +225,16 @@ def parse_ubl_xml_bytes(raw_bytes: bytes, source_name: str = "<memory>") -> Opti
         qty_el = _find_child(line_el, "InvoicedQuantity")
         qty_text = qty_el.text.strip() if qty_el is not None and qty_el.text else ""
         unit_code = str(qty_el.get("unitCode") or "").strip() if qty_el is not None else ""
-        qty = _to_decimal(qty_text, f"Line[{line_id}].InvoicedQuantity", warnings)
-        price_amt = _to_decimal(_text_at(line_el, "Price", "PriceAmount"), f"Line[{line_id}].Price", warnings)
-        line_allow, _ = _sum_allowance_charges(line_el, warnings, f"Line[{line_id}]")
-        line_total = _to_decimal(_text_at(line_el, "LineExtensionAmount"), f"Line[{line_id}].LineExtensionAmount", warnings)
-        line_tax_amt, line_subtotals = _extract_tax_totals(line_el, "TaxTotal", "VERGI", warnings)
+        qty = _to_decimal(qty_text, f"Line[{line_id}].InvoicedQuantity", warnings, lang=active_lang)
+        price_amt = _to_decimal(_text_at(line_el, "Price", "PriceAmount"), f"Line[{line_id}].Price", warnings, lang=active_lang)
+        line_allow, _ = _sum_allowance_charges(line_el, warnings, f"Line[{line_id}]", lang=active_lang)
+        line_total = _to_decimal(
+            _text_at(line_el, "LineExtensionAmount"),
+            f"Line[{line_id}].LineExtensionAmount",
+            warnings,
+            lang=active_lang,
+        )
+        line_tax_amt, line_subtotals = _extract_tax_totals(line_el, "TaxTotal", kinds["tax"], warnings, lang=active_lang)
         line_pct = line_subtotals[0].percent if line_subtotals else ZERO
 
         lines.append(
@@ -269,9 +293,14 @@ def _is_unsafe_zip_member(member_name: str) -> bool:
     return ".." in parts
 
 
-def _read_zip_member_bounded(zf: zipfile.ZipFile, info: zipfile.ZipInfo, budget_state: Dict[str, int]) -> bytes:
+def _read_zip_member_bounded(
+    zf: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    budget_state: Dict[str, int],
+    lang: str = "tr",
+) -> bytes:
     if info.file_size > DEFAULT_MAX_ENTRY_BYTES:
-        raise ValueError(f"ZIP girdisi boyut sınırını aşıyor ({info.filename}).")
+        raise ValueError(t(lang, "parser_zip_entry_limit", filename=info.filename))
 
     chunks: List[bytes] = []
     entry_read = 0
@@ -283,7 +312,7 @@ def _read_zip_member_bounded(zf: zipfile.ZipFile, info: zipfile.ZipInfo, budget_
             entry_read += len(chunk)
             budget_state["total_bytes"] += len(chunk)
             if entry_read > DEFAULT_MAX_ENTRY_BYTES or budget_state["total_bytes"] > DEFAULT_MAX_TOTAL_BYTES:
-                raise ValueError(f"ZIP toplam açılmış veri sınırı aşıldı ({info.filename}).")
+                raise ValueError(t(lang, "parser_zip_total_limit", filename=info.filename))
             chunks.append(chunk)
     return b"".join(chunks)
 
@@ -295,9 +324,10 @@ def _collect_from_zip_bytes(
     invoices: List[InvoiceRecord],
     parse_errors: List[Dict[str, str]],
     budget_state: Dict[str, int],
+    lang: str = "tr",
 ) -> None:
     if depth > DEFAULT_MAX_ZIP_DEPTH:
-        parse_errors.append({"source": archive_label, "error": "İç içe ZIP derinlik sınırı aşıldı."})
+        parse_errors.append({"source": archive_label, "error": t(lang, "parser_zip_depth")})
         return
 
     try:
@@ -307,7 +337,7 @@ def _collect_from_zip_bytes(
                     continue
                 if _is_unsafe_zip_member(info.filename):
                     parse_errors.append(
-                        {"source": f"{archive_label}!/{info.filename}", "error": "Güvensiz ZIP yol geçişi engellendi."}
+                        {"source": f"{archive_label}!/{info.filename}", "error": t(lang, "parser_zip_traversal")}
                     )
                     continue
                 lower_name = info.filename.lower()
@@ -316,26 +346,38 @@ def _collect_from_zip_bytes(
 
                 nested_label = f"{archive_label}!/{info.filename}"
                 try:
-                    member_bytes = _read_zip_member_bounded(zf, info, budget_state)
+                    member_bytes = _read_zip_member_bounded(zf, info, budget_state, lang=lang)
                 except (ValueError, zipfile.BadZipFile, RuntimeError) as exc:
                     parse_errors.append({"source": nested_label, "error": str(exc)})
                     continue
 
                 if lower_name.endswith(".zip"):
-                    _collect_from_zip_bytes(member_bytes, nested_label, depth + 1, invoices, parse_errors, budget_state)
+                    _collect_from_zip_bytes(
+                        member_bytes,
+                        nested_label,
+                        depth + 1,
+                        invoices,
+                        parse_errors,
+                        budget_state,
+                        lang=lang,
+                    )
                 else:
                     try:
-                        parsed = parse_ubl_xml_bytes(member_bytes, nested_label)
+                        parsed = parse_ubl_xml_bytes(member_bytes, nested_label, lang=lang)
                         if parsed is not None:
                             invoices.append(parsed)
                     except ValueError as exc:
                         parse_errors.append({"source": nested_label, "error": str(exc)})
     except (zipfile.BadZipFile, StdET.ParseError, OSError) as exc:
-        parse_errors.append({"source": archive_label, "error": f"ZIP arşivi okunamadı: {exc}"})
+        parse_errors.append({"source": archive_label, "error": t(lang, "parser_zip_bad", exc=exc)})
 
 
-def collect_invoices_from_paths(input_paths: List[Path]) -> Tuple[List[InvoiceRecord], List[Dict[str, str]]]:
+def collect_invoices_from_paths(
+    input_paths: List[Path],
+    lang: str = "tr",
+) -> Tuple[List[InvoiceRecord], List[Dict[str, str]]]:
     """Collect UBL-TR invoices from .xml files, .zip archives, and directories."""
+    active_lang = validate_lang(lang)
     invoices: List[InvoiceRecord] = []
     parse_errors: List[Dict[str, str]] = []
     budget_state = {"total_bytes": 0}
@@ -344,7 +386,7 @@ def collect_invoices_from_paths(input_paths: List[Path]) -> Tuple[List[InvoiceRe
     for raw_path in input_paths:
         resolved = Path(raw_path).resolve()
         if not resolved.exists():
-            parse_errors.append({"source": str(raw_path), "error": "Girdi yolu bulunamadı."})
+            parse_errors.append({"source": str(raw_path), "error": t(active_lang, "parser_missing_path")})
             continue
         if resolved.is_dir():
             for file_path in sorted(resolved.rglob("*")):
@@ -358,22 +400,32 @@ def collect_invoices_from_paths(input_paths: List[Path]) -> Tuple[List[InvoiceRe
         try:
             file_bytes = file_path.read_bytes()
         except OSError as exc:
-            parse_errors.append({"source": str(file_path), "error": f"Dosya okunamadı: {exc}"})
+            parse_errors.append({"source": str(file_path), "error": t(active_lang, "parser_read_failed", exc=exc)})
             continue
 
         if suffix == ".zip":
-            _collect_from_zip_bytes(file_bytes, str(file_path), 1, invoices, parse_errors, budget_state)
+            _collect_from_zip_bytes(
+                file_bytes,
+                str(file_path),
+                1,
+                invoices,
+                parse_errors,
+                budget_state,
+                lang=active_lang,
+            )
         elif suffix == ".xml":
             try:
-                parsed = parse_ubl_xml_bytes(file_bytes, str(file_path))
+                parsed = parse_ubl_xml_bytes(file_bytes, str(file_path), lang=active_lang)
                 if parsed is not None:
                     invoices.append(parsed)
                 else:
-                    parse_errors.append({"source": str(file_path), "error": "XML dosyası bir UBL-TR Invoice belgesi değil."})
+                    parse_errors.append({"source": str(file_path), "error": t(active_lang, "parser_not_invoice")})
             except ValueError as exc:
                 parse_errors.append({"source": str(file_path), "error": str(exc)})
         else:
-            parse_errors.append({"source": str(file_path), "error": f"Desteklenmeyen dosya uzantısı: {suffix}"})
+            parse_errors.append(
+                {"source": str(file_path), "error": t(active_lang, "parser_unsupported_ext", suffix=suffix)}
+            )
 
-    logger.info("%d fatura ayrıştırıldı, %d dosya/okuma hatası.", len(invoices), len(parse_errors))
+    logger.info(t(active_lang, "parser_log_summary"), len(invoices), len(parse_errors))
     return invoices, parse_errors

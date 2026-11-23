@@ -1,48 +1,68 @@
 # ubl-invoice-audit
 
-%100 çevrimdışı çalışan, **KVKK uyumlu** UBL-TR (e-Fatura / e-Arşiv) XML ve iç içe ZIP ayrıştırıcı, matematiksel KDV/matrah/tevkifat/mükerrer denetçisi ve çok sayfalı Excel (`.xlsx`) raporlayıcı.
+Language: **English** | [Türkçe](README.tr.md)
 
-## Neden Çevrimdışı?
+A **100% offline** Python CLI tool that parses UBL-TR (`e-Invoice` / `e-Archive`) XML documents and nested ZIP archives, validates line/tax/withholding math using exact `Decimal` arithmetic, isolates duplicate invoices, and exports a styled 5-sheet Excel (`.xlsx`) audit workbook.
 
-GİB ve özel entegratörlerden indirilen `.zip` ve `.xml` faturaları 3. parti web sitelerine yüklemeden veya belge başına kontör ödemeden doğrudan yerel bilgisayarda denetler:
+> Built for strict local privacy: XML invoices and ZIP batches never leave your machine or touch third-party APIs.
 
-- **İç İçe ZIP ve XXE Koruması:** GİB arşivlerindeki iç içe `.zip` paketlerini bellekte açar; dış varlık (`XXE`) çözümleme, yol geçişi (`zip-slip`) ve açılma boyutu sınırlarıyla güvenlidir.
-- **Kesin `Decimal` Matematik Denetimi:** Kayan nokta (`float`) yuvarlama hatası olmadan kalem toplamı, iskonto/artırım, çoklu KDV oranları, `TaxTotal`, `WithholdingTaxTotal` (tevkifat), `TaxInclusiveAmount` ve `PayableAmount` mutabakatını doğrular.
-- **Mükerrer ve Çift Kayıt Yakalama:** Aynı `ETTN (UUID)`, aynı satıcıda tekrar eden Fatura No ve aynı satıcı + tarih + tutarlı olası çift kayıtları ayırır.
-- **Şahıs Firması ve Çoklu Oran Desteği:** Hem `PartyName` (`VKN`) hem `Person` (`TCKN`) yapısını okur.
-- **5 Sayfalı Biçimli Excel Çıktısı:** `Ozet_Denetim` (yerel `COUNTIF`/`SUM` formülleri + KDV kırılımı), `Faturalar`, `Kalem_Detay`, `KDV_Kirilim`, `Uyari_ve_Mukerrer`.
+## Key Capabilities
 
-## Kurulum ve Kullanım
+- **Nested ZIP & XXE Protection:** Safely expands nested `.zip` archives in memory with external entity (`XXE`) resolution disabled, zip-slip (`../`) path blocking, depth limits, and decompressed size caps.
+- **Exact `Decimal` Reconciliation:** Validates line extensions, allowances/charges, multi-rate VAT subtotals, `TaxTotal`, `WithholdingTaxTotal`, `TaxInclusiveAmount`, and `PayableAmount` without floating-point rounding drift.
+- **Duplicate & Anomaly Detection:** Isolates duplicate `ETTN (UUID)` entries, repeated supplier invoice numbers across different ETTNs, and probable duplicate pairs (same supplier, date, and payable total).
+- **Corporate & Sole-Proprietor Support:** Handles both `PartyName` (`VKN`) and `Person` (`TCKN`) supplier/customer blocks.
+- **CWE-1236 Formula Protection:** Neutralizes leading spreadsheet formula characters (`=`, `+`, `-`, `@`) in untrusted XML text fields during `.xlsx` export.
 
-Python 3.10+ gerektirir (`XlsxWriter`, `lxml`).
+## Installation & Usage
+
+Requires Python `>=3.10` (`lxml`, `XlsxWriter`):
 
 ```powershell
 cd ubl-invoice-audit
 pip install -e .[dev]
 ```
 
-### 1. Hazır Demo (Örnek Faturalar + Rapor)
+Run directly from source without installing (`PowerShell` / `Bash`):
 
 ```powershell
-ubl-audit demo --out-dir demo_output
+$env:PYTHONPATH="src"; python -m ubl_audit.cli demo --lang en --out-dir demo_output
 ```
 
-### 2. Gerçek Klasör / XML / ZIP Denetimi
+```bash
+PYTHONPATH=src python -m ubl_audit.cli demo --lang en --out-dir demo_output
+```
+
+### 1. Run Sample Demo
 
 ```powershell
-ubl-audit audit .\faturalar_klasoru .\arsiv.zip -o .\rapor.xlsx --json .\ozet.json
+ubl-audit demo --lang en --out-dir demo_output
 ```
 
-Hata bulunduğunda CI/otomasyon betiklerinin çıkış kodu `2` döndürmesi için `--fail-on-error` ekleyin.
+### 2. Audit Folders, XML Files, or ZIP Archives
 
-## Test
+Use `--lang en` for English output or omit `--lang` (`tr` default for backward compatibility). Add `--fail-on-error` to return exit code `2` when errors or parse failures are detected:
 
 ```powershell
-python -m unittest discover -s tests -v
+ubl-audit audit .\invoices_dir .\batch.zip -o .\audit_report.xlsx --json .\summary.json --lang en --fail-on-error
 ```
 
-(`pytest` kurulu ortamlarda `pytest -v` de doğrudan çalışır.)
+## 5-Sheet Workbook Output (`--lang en`)
 
-## Lisans
+| Sheet Name | Contents |
+| --- | --- |
+| `Audit_Summary` | Dynamic `COUNTIF` / `SUM` formulas, error counters, and VAT rate totals |
+| `Invoices` | Full invoice ledger with status badge, tax IDs, totals, and audit notes |
+| `Line_Details` | Line-level quantities, unit prices, allowances, and VAT breakdowns |
+| `VAT_Breakdown` | Tax and withholding subtotal ledger per invoice |
+| `Alerts_and_Duplicates` | Unreadable files, math discrepancies, duplicate ETTNs, and warnings |
 
-MIT
+## Tests
+
+```powershell
+python -m pytest -v
+```
+
+## License
+
+[MIT](LICENSE) — Rovtal

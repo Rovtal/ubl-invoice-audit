@@ -108,3 +108,17 @@ class ParserTests(unittest.TestCase):
     def test_malformed_xml_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
             parse_ubl_xml_bytes(b"<Invoice><broken", "broken.xml")
+
+    def test_english_parser_error_and_zip_traversal_messages(self) -> None:
+        with self.assertRaises(ValueError) as empty_ctx:
+            parse_ubl_xml_bytes(b"", "empty.xml", lang="en")
+        self.assertIn("empty xml", str(empty_ctx.exception).lower())
+
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp_dir = Path(tmp_str)
+            bad_zip = tmp_dir / "bad.zip"
+            with zipfile.ZipFile(bad_zip, "w") as zf:
+                zf.writestr("../evil.xml", b"<Invoice/>")
+            _, errors = collect_invoices_from_paths([bad_zip], lang="en")
+            self.assertEqual(len(errors), 1)
+            self.assertIn("path traversal", errors[0]["error"].lower())

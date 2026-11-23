@@ -124,3 +124,28 @@ class AuditorTests(unittest.TestCase):
         self.assertIn("OLASI_CIFT_KAYIT", codes)
         self.assertEqual(report.error_count, 3)
         self.assertEqual(report.findings[0].severity, "HATA")
+
+    def test_english_audit_findings_and_statuses(self) -> None:
+        inv_bad = parse_ubl_xml_bytes(
+            build_sample_ubl_xml(
+                invoice_id="ENBAD001",
+                ettn="77777777-1111-4111-8111-111111111111",
+                issue_date="2026-11-23",
+                supplier_vkn="1234567890",
+                supplier_name="Faulty Co.",
+                line_amount="1000.00",
+                tax_amount="150.00",
+                tax_inclusive="1150.00",
+                payable_amount="1150.00",
+                lang="en",
+            ),
+            "bad_en.xml",
+            lang="en",
+        )
+        if inv_bad is None:
+            self.fail("bad_en.xml failed to parse")
+        report = audit_invoices([inv_bad], tolerance=Decimal("0.05"), lang="en")
+        self.assertEqual(report.error_count, 1)
+        self.assertEqual(report.results[0].status, "ERROR")
+        self.assertEqual(report.findings[0].severity, "ERROR")
+        self.assertIn("taxable base * rate", report.findings[0].message)
