@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ubl-invoice-audit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Offline UBL-TR e-Invoice / e-Archive XML and nested ZIP parser, tax/withholding/duplicate auditor, and bilingual Excel reporter."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.0"
+  "pytest>=8.0",
+  "ruff>=0.6"
 ]
 
 [project.scripts]

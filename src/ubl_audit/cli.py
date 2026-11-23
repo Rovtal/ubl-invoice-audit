@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import __version__
 from .auditor import audit_invoices
 from .exporter import export_audit_report_xlsx
 from .i18n import DEMO_LAYOUT, SUPPORTED_LANGS, t, validate_lang
@@ -82,6 +83,12 @@ def build_parser(lang: str = "tr") -> argparse.ArgumentParser:
         description=t(active_lang, "cli_desc"),
     )
     parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
         "--lang",
         choices=SUPPORTED_LANGS,
         default="tr",
@@ -107,6 +114,11 @@ def build_parser(lang: str = "tr") -> argparse.ArgumentParser:
         "--fail-on-error",
         action="store_true",
         help=t(active_lang, "cli_fail_help"),
+    )
+    audit_cmd.add_argument(
+        "--verify-tax-id",
+        action="store_true",
+        help=t(active_lang, "cli_verify_tax_id_help"),
     )
     audit_cmd.add_argument(
         "--lang",
@@ -181,7 +193,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(t(active_lang, "cli_input_error", source=err["source"], error=err["error"]), file=sys.stderr)
         return 1
 
-    report = audit_invoices(invoices, parse_errors=parse_errors, tolerance=tolerance, lang=active_lang)
+    report = audit_invoices(
+        invoices,
+        parse_errors=parse_errors,
+        tolerance=tolerance,
+        lang=active_lang,
+        verify_tax_id=args.verify_tax_id,
+    )
     out_xlsx = export_audit_report_xlsx(report, Path(args.output), lang=active_lang)
 
     if args.json_output:

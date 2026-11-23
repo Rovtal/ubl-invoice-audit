@@ -1,5 +1,7 @@
 # ubl-invoice-audit
 
+[![CI](https://github.com/Rovtal/ubl-invoice-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/Rovtal/ubl-invoice-audit/actions/workflows/ci.yml)
+
 Dil: [English](README.md) | **Türkçe**
 
 %100 çevrimdışı çalışan, **KVKK uyumlu** UBL-TR (e-Fatura / e-Arşiv) XML ve iç içe ZIP ayrıştırıcı, matematiksel KDV/matrah/tevkifat/mükerrer denetçisi ve çok sayfalı Excel (`.xlsx`) raporlayıcı.
@@ -31,10 +33,10 @@ ubl-audit demo --out-dir demo_output
 
 ### 2. Gerçek Klasör / XML / ZIP Denetimi
 
-Hata bulunduğunda çıkış kodu `2` döndürmesi için `--fail-on-error`, İngilizce çıktı için `--lang en` ekleyin:
+Hata bulunduğunda çıkış kodu `2` döndürmesi için `--fail-on-error`, satıcı `VKN`/`TCKN` kontrol basamağı doğrulaması için `--verify-tax-id`, İngilizce çıktı için `--lang en` ekleyin:
 
 ```powershell
-ubl-audit audit .\faturalar_klasoru .\arsiv.zip -o .\rapor.xlsx --json .\ozet.json --fail-on-error
+ubl-audit audit .\faturalar_klasoru .\arsiv.zip -o .\rapor.xlsx --json .\ozet.json --verify-tax-id --fail-on-error
 ```
 
 ## Test

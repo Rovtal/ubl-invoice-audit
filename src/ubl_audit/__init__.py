@@ -1,6 +1,6 @@
 """Offline UBL-TR invoice parser, mathematical auditor, and Excel exporter."""
 
-from .auditor import audit_invoices
+from .auditor import audit_invoices, validate_turkish_tax_id
 from .exporter import export_audit_report_xlsx
 from .models import (
     AuditFinding,
@@ -21,6 +21,7 @@ __all__ = [
     "collect_invoices_from_paths",
     "export_audit_report_xlsx",
     "parse_ubl_xml_bytes",
+    "validate_turkish_tax_id",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

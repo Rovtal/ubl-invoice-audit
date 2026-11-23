@@ -160,3 +160,33 @@ class ExporterAndCliTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as bad_lang_ctx:
                 main(["demo", "--lang", "de"])
             self.assertEqual(bad_lang_ctx.exception.code, 2)
+
+    def test_cli_version_and_verify_tax_id_flag(self) -> None:
+        with self.assertRaises(SystemExit) as ver_ctx:
+            main(["--version"])
+        self.assertEqual(ver_ctx.exception.code, 0)
+
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp_dir = Path(tmp_str)
+            demo_dir = tmp_dir / "tax_demo"
+            self.assertEqual(main(["demo", "--lang", "en", "--out-dir", str(demo_dir)]), 0)
+
+            out_xlsx = tmp_dir / "strict_tax.xlsx"
+            out_json = tmp_dir / "strict_tax.json"
+            rc = main(
+                [
+                    "audit",
+                    str(demo_dir / "sample_invoices" / "RVT2026000000000.xml"),
+                    "-o",
+                    str(out_xlsx),
+                    "--json",
+                    str(out_json),
+                    "--lang",
+                    "en",
+                    "--verify-tax-id",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            payload = json.loads(out_json.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["warnings"], 1)
+            self.assertEqual(payload["findings"][0]["code"], "SATICI_VKN_SAGLAMA")

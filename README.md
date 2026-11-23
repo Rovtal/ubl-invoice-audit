@@ -1,5 +1,7 @@
 # ubl-invoice-audit
 
+[![CI](https://github.com/Rovtal/ubl-invoice-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/Rovtal/ubl-invoice-audit/actions/workflows/ci.yml)
+
 Language: **English** | [Türkçe](README.tr.md)
 
 A **100% offline** Python CLI tool that parses UBL-TR (`e-Invoice` / `e-Archive`) XML documents and nested ZIP archives, validates line/tax/withholding math using exact `Decimal` arithmetic, isolates duplicate invoices, and exports a styled 5-sheet Excel (`.xlsx`) audit workbook.
@@ -41,10 +43,10 @@ ubl-audit demo --lang en --out-dir demo_output
 
 ### 2. Audit Folders, XML Files, or ZIP Archives
 
-Use `--lang en` for English output or omit `--lang` (`tr` default for backward compatibility). Add `--fail-on-error` to return exit code `2` when errors or parse failures are detected:
+Use `--lang en` for English output or omit `--lang` (`tr` default for backward compatibility). Add `--verify-tax-id` to validate 10/11-digit Turkish `VKN`/`TCKN` check digits as warnings, and `--fail-on-error` to return exit code `2` when errors or parse failures are detected:
 
 ```powershell
-ubl-audit audit .\invoices_dir .\batch.zip -o .\audit_report.xlsx --json .\summary.json --lang en --fail-on-error
+ubl-audit audit .\invoices_dir .\batch.zip -o .\audit_report.xlsx --json .\summary.json --lang en --verify-tax-id --fail-on-error
 ```
 
 ## 5-Sheet Workbook Output (`--lang en`)

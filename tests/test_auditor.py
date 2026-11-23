@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from ubl_audit.auditor import audit_invoices
+from ubl_audit.auditor import audit_invoices, validate_turkish_tax_id
 from ubl_audit.parser import parse_ubl_xml_bytes
 from ubl_audit.samples import build_sample_ubl_xml
 
@@ -149,3 +149,42 @@ class AuditorTests(unittest.TestCase):
         self.assertEqual(report.results[0].status, "ERROR")
         self.assertEqual(report.findings[0].severity, "ERROR")
         self.assertIn("taxable base * rate", report.findings[0].message)
+
+    def test_validate_turkish_tax_id_and_verify_flag(self) -> None:
+        self.assertTrue(validate_turkish_tax_id("1234567890"))
+        self.assertTrue(validate_turkish_tax_id("3250566851"))
+        self.assertTrue(validate_turkish_tax_id("10000000146"))
+        self.assertFalse(validate_turkish_tax_id("5566778899"))
+        self.assertFalse(validate_turkish_tax_id("1111111111"))
+        self.assertFalse(validate_turkish_tax_id("0000000000"))
+        self.assertFalse(validate_turkish_tax_id("10000000147"))
+        self.assertFalse(validate_turkish_tax_id("01234567890"))
+
+        bad_tax_xml = build_sample_ubl_xml(
+            invoice_id="TAXCHK01",
+            ettn="abababab-1111-4111-8111-111111111111",
+            issue_date="2026-11-23",
+            supplier_vkn="5566778899",
+            supplier_name="Checksum Check Inc.",
+            line_amount="100.00",
+            tax_amount="20.00",
+            tax_inclusive="120.00",
+            payable_amount="120.00",
+            lang="en",
+        )
+        inv = parse_ubl_xml_bytes(bad_tax_xml, "taxchk.xml", lang="en")
+        if inv is None:
+            self.fail("taxchk.xml failed to parse")
+
+        default_report = audit_invoices([inv], lang="en")
+        self.assertEqual(default_report.passed_count, 1)
+
+        strict_en = audit_invoices([inv], lang="en", verify_tax_id=True)
+        self.assertEqual(strict_en.warning_count, 1)
+        self.assertEqual(strict_en.findings[0].code, "SATICI_VKN_SAGLAMA")
+        self.assertIn("checksum", strict_en.findings[0].message.lower())
+
+        strict_tr = audit_invoices([inv], lang="tr", verify_tax_id=True)
+        self.assertEqual(strict_tr.warning_count, 1)
+        self.assertEqual(strict_tr.findings[0].severity, "UYARI")
+        self.assertIn("kontrol basamağı", strict_tr.findings[0].message.lower())

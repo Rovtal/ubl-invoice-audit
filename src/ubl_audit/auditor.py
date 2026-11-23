@@ -12,6 +12,28 @@ def _fmt(val: Decimal) -> str:
     return f"{val:.2f}"
 
 
+def validate_turkish_tax_id(tax_id: str) -> bool:
+    """Validate 10-digit Turkish VKN or 11-digit TCKN check digits offline."""
+    val = tax_id.strip()
+    if not val.isdigit() or len(set(val)) == 1:
+        return False
+    digits = [int(ch) for ch in val]
+    if len(digits) == 10:
+        total = 0
+        for idx in range(9):
+            step1 = (digits[idx] + 9 - idx) % 10
+            step2 = (step1 * (2 ** (9 - idx))) % 9
+            if step1 != 0 and step2 == 0:
+                step2 = 9
+            total += step2
+        return digits[9] == (10 - (total % 10)) % 10
+    if len(digits) == 11 and digits[0] != 0:
+        d10 = ((sum(digits[0:9:2]) * 7) - sum(digits[1:8:2])) % 10
+        d11 = sum(digits[0:10]) % 10
+        return digits[9] == d10 and digits[10] == d11
+    return False
+
+
 def _make_finding(
     invoice: InvoiceRecord,
     severity: str,
@@ -34,7 +56,12 @@ def _make_finding(
     )
 
 
-def _audit_single_invoice(invoice: InvoiceRecord, tolerance: Decimal, lang: str = "tr") -> List[AuditFinding]:
+def _audit_single_invoice(
+    invoice: InvoiceRecord,
+    tolerance: Decimal,
+    lang: str = "tr",
+    verify_tax_id: bool = False,
+) -> List[AuditFinding]:
     st = STATUS_LABELS[lang]
     findings: List[AuditFinding] = []
 
@@ -68,6 +95,19 @@ def _audit_single_invoice(invoice: InvoiceRecord, tolerance: Decimal, lang: str 
                 t(lang, "audit_vkn_len", length=len(invoice.supplier_vkn)),
                 expected_value=t(lang, "audit_vkn_len_exp"),
                 actual_value=str(len(invoice.supplier_vkn)),
+                lang=lang,
+            )
+        )
+    elif verify_tax_id and not validate_turkish_tax_id(invoice.supplier_vkn):
+        kind = "VKN" if len(invoice.supplier_vkn) == 10 else "TCKN"
+        findings.append(
+            _make_finding(
+                invoice,
+                st["warn"],
+                "SATICI_VKN_SAGLAMA",
+                t(lang, "audit_tax_id_checksum", kind=kind, tax_id=invoice.supplier_vkn),
+                expected_value=t(lang, "audit_tax_id_checksum_exp", kind=kind),
+                actual_value=invoice.supplier_vkn,
                 lang=lang,
             )
         )
@@ -175,6 +215,7 @@ def audit_invoices(
     parse_errors: List[Dict[str, str]] | None = None,
     tolerance: Decimal = Decimal("0.05"),
     lang: str = "tr",
+    verify_tax_id: bool = False,
 ) -> AuditReport:
     """Audit all parsed UBL-TR invoices for math, tax, withholding, and duplicates."""
     active_lang = validate_lang(lang)
@@ -182,7 +223,8 @@ def audit_invoices(
     severity_order = {st["error"]: 0, st["warn"]: 1}
     errors_list = list(parse_errors or [])
     per_invoice_findings: Dict[int, List[AuditFinding]] = {
-        idx: _audit_single_invoice(inv, tolerance, lang=active_lang) for idx, inv in enumerate(invoices)
+        idx: _audit_single_invoice(inv, tolerance, lang=active_lang, verify_tax_id=verify_tax_id)
+        for idx, inv in enumerate(invoices)
     }
 
     ettn_groups: Dict[str, List[int]] = defaultdict(list)
