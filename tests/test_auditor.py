@@ -64,8 +64,8 @@ class AuditorTests(unittest.TestCase):
 </Invoice>""".encode("utf-8")
 
         inv = parse_ubl_xml_bytes(xml_bytes, "multi.xml")
-        self.assertIsNotNone(inv)
-        assert inv is not None
+        if inv is None:
+            self.fail("multi.xml failed to parse")
         report = audit_invoices([inv])
         self.assertEqual(report.passed_count, 1)
         self.assertEqual(report.error_count, 0)
@@ -115,7 +115,8 @@ class AuditorTests(unittest.TestCase):
             "dup2.xml",
         )
 
-        assert inv_bad_kdv and inv_dup_1 and inv_dup_2
+        if inv_bad_kdv is None or inv_dup_1 is None or inv_dup_2 is None:
+            self.fail("Sample audit test invoices failed to parse")
         report = audit_invoices([inv_bad_kdv, inv_dup_1, inv_dup_2], tolerance=Decimal("0.05"))
         codes = {item.code for item in report.findings}
         self.assertIn("VERGI_HESAPLAMA_HATASI", codes)

@@ -27,8 +27,8 @@ class ParserTests(unittest.TestCase):
             payable_amount="1200.00",
         )
         inv = parse_ubl_xml_bytes(b"\xef\xbb\xbf" + company_xml, "company.xml")
-        self.assertIsNotNone(inv)
-        assert inv is not None
+        if inv is None:
+            self.fail("company.xml failed to parse")
         self.assertEqual(inv.invoice_id, "RVT20260001")
         self.assertEqual(inv.supplier_scheme, "VKN")
         self.assertEqual(inv.supplier_name, "Anadolu A.Ş.")
@@ -51,8 +51,8 @@ class ParserTests(unittest.TestCase):
             payable_amount="2200.00",
         )
         inv2 = parse_ubl_xml_bytes(person_xml, "person.xml")
-        self.assertIsNotNone(inv2)
-        assert inv2 is not None
+        if inv2 is None:
+            self.fail("person.xml failed to parse")
         self.assertEqual(inv2.supplier_scheme, "TCKN")
         self.assertEqual(inv2.supplier_name, "Deniz Yıldız")
         self.assertEqual(inv2.withholding_total_amount, Decimal("200.00"))
@@ -71,8 +71,8 @@ class ParserTests(unittest.TestCase):
 </Invoice>
 """
         inv = parse_ubl_xml_bytes(xxe_payload, "xxe.xml")
-        self.assertIsNotNone(inv)
-        assert inv is not None
+        if inv is None:
+            self.fail("xxe.xml failed to parse")
         self.assertNotIn("extensions", inv.invoice_id.lower())
         self.assertNotIn("[fonts]", inv.invoice_id.lower())
 
